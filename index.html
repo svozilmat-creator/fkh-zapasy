@@ -104,7 +104,29 @@
   }
   .date-text{ font-size:15px; color:var(--grey); font-weight:500; }
   .counts{ display:flex; gap:14px; margin-top:8px; font-size:14px; color:var(--grey); flex-wrap:wrap; font-weight:500;}
-  .chevron{ align-self:center; color:var(--grey); font-size:24px; transition: transform 0.2s ease; flex-shrink:0; }
+  .my-status-bar{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:0 16px 16px;
+  }
+  .my-status-label{
+    font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:13px;
+    letter-spacing:0.04em; font-weight:600; color:var(--grey); flex-shrink:0;
+  }
+  .my-status-prompt{
+    font-size:14px; color:var(--grey); font-style:italic; padding-top:0;
+  }
+
+  .roster-toggle{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px;
+    border-top:2px solid var(--line);
+    cursor:pointer;
+    user-select:none;
+    font-family:'Oswald',sans-serif; font-size:14px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.02em; color:var(--grey);
+  }
+  .roster-toggle:hover{ color:var(--ink); }
+  .chevron{ color:var(--grey); font-size:20px; transition: transform 0.2s ease; flex-shrink:0; }
   .card.open .chevron{ transform:rotate(180deg); }
 
   .roster{
@@ -112,18 +134,17 @@
     overflow:hidden;
     transition: max-height 0.28s ease;
     background: var(--paper);
-    border-top:2px solid var(--line);
   }
   .card.open .roster{ max-height:2600px; }
-  .roster-inner{ padding:14px 16px 18px; }
+  .roster-inner{ padding:6px 16px 12px; }
   .player-row{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
-    padding:12px 4px;
+    padding:11px 4px;
     border-bottom:1px solid var(--line);
     flex-wrap:wrap;
   }
   .player-row:last-child{ border-bottom:none; }
-  .player-name{ font-size:17px; font-weight:600; display:flex; align-items:center; gap:9px; min-width:160px; }
+  .player-name{ font-size:16px; font-weight:600; display:flex; align-items:center; gap:9px; min-width:160px; }
   .player-name .num{
     font-family:'Oswald',sans-serif; font-size:13px; color:var(--white);
     background:var(--ink); border-radius:5px; width:24px; height:24px;
@@ -131,6 +152,16 @@
   }
   .player-name.me{ color:var(--red-dark); }
   .player-name .me-tag{ font-size:11px; font-family:'Oswald',sans-serif; letter-spacing:0.04em; background:var(--red); color:var(--white); padding:2px 7px; border-radius:5px; text-transform:uppercase;}
+
+  .status-pill{
+    font-family:'Oswald',sans-serif; font-size:12.5px; text-transform:uppercase;
+    letter-spacing:0.03em; font-weight:600; padding:5px 12px; border-radius:20px;
+    flex-shrink:0;
+  }
+  .status-pill.yes{ background:var(--red); color:var(--white); }
+  .status-pill.no{ background:var(--ink); color:var(--white); }
+  .status-pill.sun{ background:var(--red-tint); color:var(--red-dark); border:1.5px solid var(--red); }
+  .status-pill.none{ background:var(--white); color:var(--grey); border:1.5px solid var(--line); }
 
   .status-group{ display:flex; gap:8px; flex-wrap:wrap; }
   .status-btn{
@@ -151,9 +182,6 @@
   .status-btn:focus-visible{ outline:2px solid var(--red); outline-offset:2px; }
   .status-btn.active{ background:var(--red); border-color:var(--red); color:var(--white); }
   .status-btn.no.active{ background:var(--ink); border-color:var(--ink); }
-
-  .legend{ display:flex; gap:16px; padding:14px 16px 2px; flex-wrap:wrap; font-size:13.5px; color:var(--grey); font-weight:500; }
-  .legend b{ color:var(--ink); }
 
   .foot{ text-align:center; color:var(--grey); font-size:13px; margin-top:36px; }
 
@@ -334,14 +362,35 @@ function countStatus(matchId){
   return {yes,no,sun};
 }
 
+function statusLabel(status){
+  if(status==='yes') return 'Přijde';
+  if(status==='no') return 'Nepůjde';
+  if(status==='sun') return 'Preferuje neděli';
+  return 'Nevyplněno';
+}
+
 function renderMatchCard(match){
   const usHome = match.home === "FK Hlubočky";
   const canProposeSunday = usHome && match.day === 'Sobota';
   const c = countStatus(match.id);
+  const myData = whoAmI ? ((appState[match.id] && appState[match.id][whoAmI]) || {}) : {};
 
   const card = document.createElement('div');
   card.className = 'card';
   card.id = 'card-'+match.id;
+
+  const myStatusHTML = whoAmI ? `
+    <div class="my-status-bar">
+      <span class="my-status-label">Tvoje účast</span>
+      <div class="status-group">
+        <button class="status-btn yes ${myData.status==='yes' ? 'active':''}" data-status="yes">Přijdu</button>
+        <button class="status-btn no ${myData.status==='no' ? 'active':''}" data-status="no">Nepůjdu</button>
+        ${canProposeSunday ? `<button class="status-btn sun ${myData.status==='sun' ? 'active':''}" data-status="sun">Neděle</button>` : ''}
+      </div>
+    </div>
+  ` : `
+    <div class="my-status-bar my-status-prompt">Vyber si nahoře svoje jméno a označíš tady rovnou svoji účast.</div>
+  `;
 
   card.innerHTML = `
     <div class="card-top" data-toggle="${match.id}">
@@ -362,20 +411,39 @@ function renderMatchCard(match){
           ${canProposeSunday ? `<span><b style="color:var(--red)">${c.sun}</b> preferuje neděli</span>` : ''}
         </div>
       </div>
-      <div class="chevron">⌄</div>
+    </div>
+    ${myStatusHTML}
+    <div class="roster-toggle" data-toggle="${match.id}">
+      <span>Zobrazit soupisku a účast celého týmu</span>
+      <span class="chevron">⌄</span>
     </div>
     <div class="roster">
-      <div class="legend">
-        <span><b>Přijdu</b> — dorazím na zápas</span>
-        <span><b>Nepůjdu</b> — nedorazím</span>
-        ${canProposeSunday ? `<span><b>Neděle</b> — vyhovovala by mi víc</span>` : ''}
-      </div>
       <div class="roster-inner" id="roster-${match.id}"></div>
     </div>
   `;
 
-  card.querySelector('.card-top').addEventListener('click', ()=>{
-    card.classList.toggle('open');
+  card.querySelectorAll('[data-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      card.classList.toggle('open');
+    });
+  });
+
+  const myBtns = card.querySelectorAll('.my-status-bar .status-btn');
+  myBtns.forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const newStatus = btn.getAttribute('data-status');
+      if(!appState[match.id]) appState[match.id] = {};
+      const existing = appState[match.id][whoAmI] || {};
+      const status = existing.status === newStatus ? null : newStatus;
+      appState[match.id][whoAmI] = {status};
+      const wasOpen = card.classList.contains('open');
+      renderMatchCard(match);
+      if(wasOpen){
+        document.getElementById('card-'+match.id).classList.add('open');
+      }
+      await saveRemoteState();
+    });
   });
 
   const rosterInner = card.querySelector('#roster-'+match.id);
@@ -384,41 +452,15 @@ function renderMatchCard(match){
     const row = document.createElement('div');
     row.className = 'player-row';
     const isMe = whoAmI === p.name;
+    const status = data.status || null;
     row.innerHTML = `
       <div class="player-name ${isMe ? 'me' : ''}">
         ${p.num ? `<span class="num">${p.num}</span>` : ''}
         ${p.name}
         ${isMe ? '<span class="me-tag">Ty</span>' : ''}
       </div>
-      <div class="status-group">
-        <button class="status-btn yes ${data.status==='yes' ? 'active':''}" data-status="yes">Přijdu</button>
-        <button class="status-btn no ${data.status==='no' ? 'active':''}" data-status="no">Nepůjdu</button>
-        ${canProposeSunday ? `<button class="status-btn sun ${data.status==='sun' ? 'active':''}" data-status="sun">Neděle</button>` : ''}
-      </div>
+      <span class="status-pill ${status || 'none'}">${statusLabel(status)}</span>
     `;
-    row.querySelectorAll('.status-btn').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        if(!whoAmI){
-          alert('Nejdřív si prosím vyber svoje jméno nahoře.');
-          return;
-        }
-        if(p.name !== whoAmI){
-          const proceed = confirm(`Označuješ stav za ${p.name}, i když jsi přihlášen jako ${whoAmI}. Pokračovat?`);
-          if(!proceed) return;
-        }
-        const newStatus = btn.getAttribute('data-status');
-        if(!appState[match.id]) appState[match.id] = {};
-        const existing = appState[match.id][p.name] || {};
-        const status = existing.status === newStatus ? null : newStatus;
-        appState[match.id][p.name] = {status};
-        const wasOpen = card.classList.contains('open');
-        renderMatchCard(match);
-        if(wasOpen){
-          document.getElementById('card-'+match.id).classList.add('open');
-        }
-        await saveRemoteState();
-      });
-    });
     rosterInner.appendChild(row);
   });
 
