@@ -66,6 +66,26 @@
   select#whoami:focus{ outline:2px solid var(--red); outline-offset:1px; }
   .storage-note{ font-size:13px; color:var(--grey); text-align:center; margin-top:10px; }
 
+  .add-player-row{ text-align:center; margin-top:10px; }
+  .add-player-btn{
+    border:2px solid var(--red); background:var(--white); color:var(--red);
+    font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:13px;
+    font-weight:600; letter-spacing:0.03em; padding:8px 16px; border-radius:20px;
+    cursor:pointer;
+  }
+  .add-player-btn:hover{ background:var(--red-tint); }
+  .add-player-form{
+    background:var(--paper); border:2px solid var(--line); border-radius:12px;
+    padding:14px 16px; margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+  }
+  .add-player-form input{
+    font-family:'Work Sans', sans-serif; font-size:16px; padding:9px 12px;
+    border-radius:8px; border:2px solid var(--line); background:var(--white); color:var(--ink);
+  }
+  .add-player-form input#new-player-name{ flex:1; min-width:180px; }
+  .add-player-form input#new-player-num{ width:150px; }
+  .add-player-form-actions{ display:flex; gap:8px; }
+
   main{ max-width:720px; margin:22px auto 0; padding:0 20px; }
 
   .card{
@@ -207,6 +227,17 @@
     <select id="whoami"></select>
     <button id="refresh-btn" title="Obnovit data" style="border:2px solid var(--line); background:var(--white); border-radius:8px; width:42px; height:42px; font-size:18px; cursor:pointer; flex-shrink:0;">⟳</button>
   </div>
+  <div class="add-player-row">
+    <button id="add-player-btn" class="add-player-btn">+ Přidat hráče</button>
+  </div>
+  <div id="add-player-form" class="add-player-form" style="display:none;">
+    <input type="text" id="new-player-name" placeholder="Jméno a příjmení">
+    <input type="number" id="new-player-num" placeholder="Číslo dresu (nepovinné)">
+    <div class="add-player-form-actions">
+      <button id="new-player-save" class="status-btn active">Přidat</button>
+      <button id="new-player-cancel" class="status-btn">Zrušit</button>
+    </div>
+  </div>
   <div class="storage-note" id="sync-status">Načítám…</div>
 </div>
 
@@ -230,10 +261,11 @@ const PLAYERS = [
   {name:"Michael Korec", num:15},
   {name:"Tomáš Režný", num:13},
   {name:"Jiří Grauer", num:5},
-  {name:"Jan Táborský", num:8},
+  {name:"Jan Táborský", num:19},
   {name:"Tomáš Hloušek", num:4},
   {name:"Ondřej Goldscheid (C)", num:9},
   {name:"Radek Škapa", num:6},
+  {name:"Bronislav Pudil", num:8},
 ];
 
 const MATCHES = [
@@ -271,21 +303,71 @@ let whoAmI = localStorage.getItem(STORAGE_PREFIX+'whoami') || null;
 let appState = {}; // { matchId: { playerName: {status} } }
 let syncTimer = null;
 
+function getAllPlayers(){
+  return PLAYERS.concat(appState.__customPlayers || []);
+}
+
+function populateWhoSelect(){
+  const current = whoAmI;
+  whoSel.innerHTML = '';
+  const emptyOpt = document.createElement('option');
+  emptyOpt.value = ""; emptyOpt.textContent = "— vyber jméno —";
+  whoSel.appendChild(emptyOpt);
+  getAllPlayers().forEach(p=>{
+    const o = document.createElement('option');
+    o.value = p.name; o.textContent = (p.num ? p.num+" · " : "") + p.name;
+    whoSel.appendChild(o);
+  });
+  if(current) whoSel.value = current;
+}
+
 const whoSel = document.getElementById('whoami');
-const empty = document.createElement('option');
-empty.value = ""; empty.textContent = "— vyber jméno —";
-whoSel.appendChild(empty);
-PLAYERS.forEach(p=>{
-  const o = document.createElement('option');
-  o.value = p.name; o.textContent = (p.num ? p.num+" · " : "") + p.name;
-  whoSel.appendChild(o);
-});
-if(whoAmI) whoSel.value = whoAmI;
+populateWhoSelect();
 whoSel.addEventListener('change', ()=>{
   whoAmI = whoSel.value || null;
   if(whoAmI){ localStorage.setItem(STORAGE_PREFIX+'whoami', whoAmI); }
   else{ localStorage.removeItem(STORAGE_PREFIX+'whoami'); }
   renderAll();
+});
+
+const addPlayerBtn = document.getElementById('add-player-btn');
+const addPlayerForm = document.getElementById('add-player-form');
+const newPlayerNameInput = document.getElementById('new-player-name');
+const newPlayerNumInput = document.getElementById('new-player-num');
+
+addPlayerBtn.addEventListener('click', ()=>{
+  const isOpen = addPlayerForm.style.display !== 'none';
+  addPlayerForm.style.display = isOpen ? 'none' : 'flex';
+  if(!isOpen) newPlayerNameInput.focus();
+});
+
+document.getElementById('new-player-cancel').addEventListener('click', ()=>{
+  addPlayerForm.style.display = 'none';
+  newPlayerNameInput.value = '';
+  newPlayerNumInput.value = '';
+});
+
+document.getElementById('new-player-save').addEventListener('click', async ()=>{
+  const name = newPlayerNameInput.value.trim();
+  if(!name){
+    alert('Zadej prosím jméno hráče.');
+    return;
+  }
+  const numRaw = newPlayerNumInput.value.trim();
+  const num = numRaw ? parseInt(numRaw, 10) : null;
+  const exists = getAllPlayers().some(p => p.name.toLowerCase() === name.toLowerCase());
+  if(exists){
+    alert('Hráč se stejným jménem už v seznamu je.');
+    return;
+  }
+  if(!appState.__customPlayers) appState.__customPlayers = [];
+  appState.__customPlayers.push({name, num: (Number.isFinite(num) ? num : null)});
+  populateWhoSelect();
+  renderAll();
+  addPlayerForm.style.display = 'none';
+  newPlayerNameInput.value = '';
+  newPlayerNumInput.value = '';
+  await saveRemoteState();
 });
 
 function setSyncStatus(text, isError){
@@ -447,7 +529,7 @@ function renderMatchCard(match){
   });
 
   const rosterInner = card.querySelector('#roster-'+match.id);
-  PLAYERS.forEach(p=>{
+  getAllPlayers().forEach(p=>{
     const data = (appState[match.id] && appState[match.id][p.name]) || {};
     const row = document.createElement('div');
     row.className = 'player-row';
@@ -479,17 +561,20 @@ function renderAll(){
 async function init(){
   document.getElementById('matches').innerHTML = '<div style="text-align:center; padding:30px; color:var(--grey);">Načítám zápasy…</div>';
   await fetchRemoteState();
+  populateWhoSelect();
   document.getElementById('matches').innerHTML = '';
   renderAll();
   if(syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(async ()=>{
     await fetchRemoteState();
+    populateWhoSelect();
     renderAll();
   }, POLL_INTERVAL_MS);
 }
 
 document.getElementById('refresh-btn').addEventListener('click', async ()=>{
   await fetchRemoteState();
+  populateWhoSelect();
   renderAll();
 });
 
