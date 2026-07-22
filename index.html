@@ -177,8 +177,9 @@
   <div class="who-card">
     <span class="who-label">Jsem</span>
     <select id="whoami"></select>
+    <button id="refresh-btn" title="Obnovit data" style="border:2px solid var(--line); background:var(--white); border-radius:8px; width:42px; height:42px; font-size:18px; cursor:pointer; flex-shrink:0;">⟳</button>
   </div>
-  <div class="storage-note">Data se ukládají v tomto prohlížeči a nejsou sdílená mezi zařízeními.</div>
+  <div class="storage-note" id="sync-status">Načítám…</div>
 </div>
 
 <main id="matches"></main>
@@ -224,8 +225,23 @@ const MATCHES = [
 ];
 
 const STORAGE_PREFIX = 'hlubocky-dochazka:';
+
+// ====== NASTAVENÍ SDÍLENÉHO ÚLOŽIŠTĚ (JSONBin.io) ======
+// 1) Zaregistruj se zdarma na https://jsonbin.io
+// 2) Vytvoř nový Bin s obsahem {}
+// 3) Sem vlep Bin ID (z URL binu) a X-Master-Key (Account -> API Keys)
+const JSONBIN_CONFIG = {
+  binId: '6a609f84da38895dfe7ee216',
+  apiKey: '$2a$10$XY4yIk0q5CokbrKCEAVnrucirwa8Kp87eaa/DI.1uh4fgGiO2iQEu'
+};
+const JSONBIN_URL = 'https://api.jsonbin.io/v3/b/' + JSONBIN_CONFIG.binId;
+const JSONBIN_READY = JSONBIN_CONFIG.binId !== 'SEM_VLOZ_BIN_ID' && JSONBIN_CONFIG.apiKey !== 'SEM_VLOZ_X_MASTER_KEY';
+const POLL_INTERVAL_MS = 20000;
+// =========================================================
+
 let whoAmI = localStorage.getItem(STORAGE_PREFIX+'whoami') || null;
-const responsesCache = {};
+let appState = {}; // { matchId: { playerName: {status} } }
+let syncTimer = null;
 
 const whoSel = document.getElementById('whoami');
 const empty = document.createElement('option');
@@ -244,25 +260,71 @@ whoSel.addEventListener('change', ()=>{
   renderAll();
 });
 
-function loadMatch(matchId){
+function setSyncStatus(text, isError){
+  const el = document.getElementById('sync-status');
+  if(!el) return;
+  el.textContent = text;
+  el.style.color = isError ? '#C8102E' : 'var(--grey)';
+}
+
+async function fetchRemoteState(){
+  if(!JSONBIN_READY){
+    setSyncStatus('Sdílené úložiště není nastavené — data zůstávají jen v tomto prohlížeči.', true);
+    appState = loadLocalFallback();
+    return;
+  }
   try{
-    const raw = localStorage.getItem(STORAGE_PREFIX+matchId);
-    responsesCache[matchId] = raw ? JSON.parse(raw) : {};
+    setSyncStatus('Synchronizuji…', false);
+    const res = await fetch(JSONBIN_URL + '/latest', {
+      headers: { 'X-Master-Key': JSONBIN_CONFIG.apiKey }
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    appState = (data && data.record) ? data.record : {};
+    localStorage.setItem(STORAGE_PREFIX+'cache', JSON.stringify(appState));
+    setSyncStatus('Aktualizováno ' + new Date().toLocaleTimeString('cs-CZ', {hour:'2-digit', minute:'2-digit'}), false);
   }catch(e){
-    responsesCache[matchId] = {};
+    console.error('Načtení dat selhalo', e);
+    setSyncStatus('Nepodařilo se stáhnout aktuální data, zobrazuji poslední známý stav.', true);
+    appState = loadLocalFallback();
   }
 }
 
-function saveMatch(matchId){
+function loadLocalFallback(){
   try{
-    localStorage.setItem(STORAGE_PREFIX+matchId, JSON.stringify(responsesCache[matchId]));
+    const raw = localStorage.getItem(STORAGE_PREFIX+'cache');
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){
+    return {};
+  }
+}
+
+async function saveRemoteState(){
+  localStorage.setItem(STORAGE_PREFIX+'cache', JSON.stringify(appState));
+  if(!JSONBIN_READY){
+    setSyncStatus('Sdílené úložiště není nastavené — data zůstávají jen v tomto prohlížeči.', true);
+    return;
+  }
+  try{
+    setSyncStatus('Ukládám…', false);
+    const res = await fetch(JSONBIN_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_CONFIG.apiKey
+      },
+      body: JSON.stringify(appState)
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    setSyncStatus('Uloženo', false);
   }catch(e){
     console.error('Uložení se nezdařilo', e);
+    setSyncStatus('Uložení se nezdařilo, zkus to prosím znovu.', true);
   }
 }
 
 function countStatus(matchId){
-  const data = responsesCache[matchId] || {};
+  const data = appState[matchId] || {};
   let yes=0, no=0, sun=0;
   Object.values(data).forEach(v=>{
     if(v.status==='yes') yes++;
@@ -318,7 +380,7 @@ function renderMatchCard(match){
 
   const rosterInner = card.querySelector('#roster-'+match.id);
   PLAYERS.forEach(p=>{
-    const data = (responsesCache[match.id] && responsesCache[match.id][p.name]) || {};
+    const data = (appState[match.id] && appState[match.id][p.name]) || {};
     const row = document.createElement('div');
     row.className = 'player-row';
     const isMe = whoAmI === p.name;
@@ -335,7 +397,7 @@ function renderMatchCard(match){
       </div>
     `;
     row.querySelectorAll('.status-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', async ()=>{
         if(!whoAmI){
           alert('Nejdřív si prosím vyber svoje jméno nahoře.');
           return;
@@ -345,16 +407,16 @@ function renderMatchCard(match){
           if(!proceed) return;
         }
         const newStatus = btn.getAttribute('data-status');
-        if(!responsesCache[match.id]) responsesCache[match.id] = {};
-        const existing = responsesCache[match.id][p.name] || {};
+        if(!appState[match.id]) appState[match.id] = {};
+        const existing = appState[match.id][p.name] || {};
         const status = existing.status === newStatus ? null : newStatus;
-        responsesCache[match.id][p.name] = {status};
-        saveMatch(match.id);
+        appState[match.id][p.name] = {status};
         const wasOpen = card.classList.contains('open');
         renderMatchCard(match);
         if(wasOpen){
           document.getElementById('card-'+match.id).classList.add('open');
         }
+        await saveRemoteState();
       });
     });
     rosterInner.appendChild(row);
@@ -372,10 +434,22 @@ function renderAll(){
   MATCHES.forEach(m => renderMatchCard(m));
 }
 
-function init(){
-  MATCHES.forEach(m => loadMatch(m.id));
+async function init(){
+  document.getElementById('matches').innerHTML = '<div style="text-align:center; padding:30px; color:var(--grey);">Načítám zápasy…</div>';
+  await fetchRemoteState();
+  document.getElementById('matches').innerHTML = '';
   renderAll();
+  if(syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(async ()=>{
+    await fetchRemoteState();
+    renderAll();
+  }, POLL_INTERVAL_MS);
 }
+
+document.getElementById('refresh-btn').addEventListener('click', async ()=>{
+  await fetchRemoteState();
+  renderAll();
+});
 
 init();
 </script>
