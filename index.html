@@ -135,6 +135,14 @@
   .my-status-prompt{
     font-size:14px; color:var(--grey); font-style:italic; padding-top:0;
   }
+  .my-note-row{ padding:0 16px 16px; margin-top:-6px; }
+  .my-note-row input{
+    width:100%; font-family:'Work Sans', sans-serif; font-size:15px;
+    padding:9px 12px; border-radius:8px; border:2px solid var(--line);
+    background:var(--white); color:var(--ink);
+  }
+  .my-note-row input::placeholder{ color:#A6A6A6; }
+  .my-note-row input:focus{ outline:2px solid var(--red); outline-offset:1px; border-color:var(--red); }
 
   .roster-toggle{
     display:flex; align-items:center; justify-content:space-between;
@@ -158,12 +166,13 @@
   .card.open .roster{ max-height:2600px; }
   .roster-inner{ padding:6px 16px 12px; }
   .player-row{
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:11px 4px;
     border-bottom:1px solid var(--line);
-    flex-wrap:wrap;
   }
   .player-row:last-child{ border-bottom:none; }
+  .player-row-main{
+    display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  }
   .player-name{ font-size:16px; font-weight:600; display:flex; align-items:center; gap:9px; min-width:160px; }
   .player-name .num{
     font-family:'Oswald',sans-serif; font-size:13px; color:var(--white);
@@ -172,6 +181,16 @@
   }
   .player-name.me{ color:var(--red-dark); }
   .player-name .me-tag{ font-size:11px; font-family:'Oswald',sans-serif; letter-spacing:0.04em; background:var(--red); color:var(--white); padding:2px 7px; border-radius:5px; text-transform:uppercase;}
+  .player-note{ font-size:14px; font-weight:400; font-style:italic; color:var(--grey); }
+  .player-note-row{ margin-top:6px; }
+  .player-note-row:empty{ margin-top:0; }
+  .own-note-input{
+    width:100%; font-family:'Work Sans', sans-serif; font-size:14.5px; font-style:italic;
+    padding:7px 10px; border-radius:7px; border:1.5px solid var(--line);
+    background:var(--paper); color:var(--ink);
+  }
+  .own-note-input::placeholder{ color:#A6A6A6; font-style:italic; }
+  .own-note-input:focus{ outline:2px solid var(--red); outline-offset:1px; border-color:var(--red); background:var(--white); }
 
   .status-pill{
     font-family:'Oswald',sans-serif; font-size:12.5px; text-transform:uppercase;
@@ -274,7 +293,7 @@ const MATCHES = [
   {id:"6eff8211-76dc-4fba-a22b-0c49d58722f2", kolo:5, home:"FC Beňov", away:"FK Hlubočky", day:"Neděle", date:"30. 8. 2026", time:"16:00"},
   {id:"4875cc99-b5f3-4cd4-b458-504bb7cbe34d", kolo:6, home:"FK Hlubočky", away:"Haná Prostějov", day:"Sobota", date:"5. 9. 2026", time:"16:00"},
   {id:"ab232848-71fe-4975-9142-cc9cbac00ab8", kolo:7, home:"Sokol Ústí", away:"FK Hlubočky", day:"Neděle", date:"13. 9. 2026", time:"10:00"},
-  {id:"4d2ff375-564e-4c51-86a7-069d07d2c67e", kolo:8, home:"FK Hlubočky", away:"FC Želatovice \u201eB\u201c", day:"Sobota", date:"19. 9. 2026", time:"15:30"},
+  {id:"4d2ff375-564e-4c51-86a7-069d07d2c67e", kolo:8, home:"FK Hlubočky", away:"FC Želatovice \u201eB\u201c", day:"Sobota", date:"19. 9. 2026", time:"10:00"},
   {id:"4bad5b62-2e22-4ffc-adeb-cc5c0c1258f6", kolo:9, home:"Sokol Určice", away:"FK Hlubočky", day:"Neděle", date:"27. 9. 2026", time:"15:30"},
   {id:"3d84d43b-08b6-433e-8357-1f7448197d9c", kolo:10, home:"TJ Kožušany", away:"FK Hlubočky", day:"Neděle", date:"4. 10. 2026", time:"15:00"},
   {id:"51c50c20-0957-4a15-bbba-5c5b3461638e", kolo:11, home:"FK Hlubočky", away:"Sokol Mostkovice", day:"Sobota", date:"10. 10. 2026", time:"15:00"},
@@ -433,27 +452,30 @@ async function saveRemoteState(){
   }
 }
 
+function escapeHTML(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function countStatus(matchId){
   const data = appState[matchId] || {};
-  let yes=0, no=0, sun=0;
+  let yes=0, no=0;
   Object.values(data).forEach(v=>{
     if(v.status==='yes') yes++;
     else if(v.status==='no') no++;
-    else if(v.status==='sun') sun++;
   });
-  return {yes,no,sun};
+  return {yes,no};
 }
 
 function statusLabel(status){
   if(status==='yes') return 'Přijde';
   if(status==='no') return 'Nepůjde';
-  if(status==='sun') return 'Preferuje neděli';
   return 'Nevyplněno';
 }
 
 function renderMatchCard(match){
   const usHome = match.home === "FK Hlubočky";
-  const canProposeSunday = usHome && match.day === 'Sobota';
   const c = countStatus(match.id);
   const myData = whoAmI ? ((appState[match.id] && appState[match.id][whoAmI]) || {}) : {};
 
@@ -467,8 +489,10 @@ function renderMatchCard(match){
       <div class="status-group">
         <button class="status-btn yes ${myData.status==='yes' ? 'active':''}" data-status="yes">Přijdu</button>
         <button class="status-btn no ${myData.status==='no' ? 'active':''}" data-status="no">Nepůjdu</button>
-        ${canProposeSunday ? `<button class="status-btn sun ${myData.status==='sun' ? 'active':''}" data-status="sun">Neděle</button>` : ''}
       </div>
+    </div>
+    <div class="my-note-row">
+      <input type="text" class="my-note-input" maxlength="60" placeholder="Krátká poznámka (např. přijdu později)…" value="${(myData.note||'').replace(/"/g,'&quot;')}">
     </div>
   ` : `
     <div class="my-status-bar my-status-prompt">Vyber si nahoře svoje jméno a označíš tady rovnou svoji účast.</div>
@@ -490,7 +514,6 @@ function renderMatchCard(match){
         <div class="counts">
           <span><b style="color:var(--red)">${c.yes}</b> přijde</span>
           <span><b style="color:var(--ink)">${c.no}</b> nepřijde</span>
-          ${canProposeSunday ? `<span><b style="color:var(--red)">${c.sun}</b> preferuje neděli</span>` : ''}
         </div>
       </div>
     </div>
@@ -518,7 +541,7 @@ function renderMatchCard(match){
       if(!appState[match.id]) appState[match.id] = {};
       const existing = appState[match.id][whoAmI] || {};
       const status = existing.status === newStatus ? null : newStatus;
-      appState[match.id][whoAmI] = {status};
+      appState[match.id][whoAmI] = {status, note: existing.note || ''};
       const wasOpen = card.classList.contains('open');
       renderMatchCard(match);
       if(wasOpen){
@@ -528,6 +551,25 @@ function renderMatchCard(match){
     });
   });
 
+  const myNoteInput = card.querySelector('.my-note-input');
+  if(myNoteInput){
+    myNoteInput.addEventListener('click', (e)=> e.stopPropagation());
+    myNoteInput.addEventListener('change', async ()=>{
+      if(!appState[match.id]) appState[match.id] = {};
+      const existing = appState[match.id][whoAmI] || {};
+      appState[match.id][whoAmI] = {status: existing.status || null, note: myNoteInput.value.trim()};
+      const rosterRow = card.querySelector('.player-row .me')?.closest('.player-row');
+      if(rosterRow){
+        const noteRow = rosterRow.querySelector('.player-note-row');
+        if(noteRow){
+          noteRow.innerHTML = myNoteInput.value.trim() ? `<div class="player-note">${escapeHTML(myNoteInput.value.trim())}</div>` : '';
+        }
+      }
+      await saveRemoteState();
+    });
+  }
+
+
   const rosterInner = card.querySelector('#roster-'+match.id);
   getAllPlayers().forEach(p=>{
     const data = (appState[match.id] && appState[match.id][p.name]) || {};
@@ -536,12 +578,17 @@ function renderMatchCard(match){
     const isMe = whoAmI === p.name;
     const status = data.status || null;
     row.innerHTML = `
-      <div class="player-name ${isMe ? 'me' : ''}">
-        ${p.num ? `<span class="num">${p.num}</span>` : ''}
-        ${p.name}
-        ${isMe ? '<span class="me-tag">Ty</span>' : ''}
+      <div class="player-row-main">
+        <div class="player-name ${isMe ? 'me' : ''}">
+          ${p.num ? `<span class="num">${p.num}</span>` : ''}
+          ${p.name}
+          ${isMe ? '<span class="me-tag">Ty</span>' : ''}
+        </div>
+        <span class="status-pill ${status || 'none'}">${statusLabel(status)}</span>
       </div>
-      <span class="status-pill ${status || 'none'}">${statusLabel(status)}</span>
+      <div class="player-note-row">
+        ${data.note ? `<div class="player-note">${escapeHTML(data.note)}</div>` : ''}
+      </div>
     `;
     rosterInner.appendChild(row);
   });
